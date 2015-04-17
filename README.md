@@ -21,11 +21,14 @@ __This app is still experimental and we need your feedback!__
 
 
 ## System Requirments
-* [Java 7](http://www.oracle.com/technetwork/java/javase/downloads/index.html)
-    * __Not tested on Java 8 yet!__
+* [Java 8](http://www.oracle.com/technetwork/java/javase/downloads/index.html)
     * Oracle JDK is recommended, but should be compatible with OpenJDK.
 * [Cytoscape 3.1.1+](http://www.cytoscape.org/)
     * Some of the new features are available only in Cytoscape 3.2.0 or later.
+
+## Examples
+ * [Basic Workflow 1: Fundamentals of Cytoscape RESTful API](http://nbviewer.ipython.org/github/idekerlab/cyREST/blob/develop/examples/python/basic/CytoscapeREST_Basic1.ipynb)
+ * [Basic Workflow 2: NetworkX and Cytoscape](http://nbviewer.ipython.org/github/idekerlab/cyREST/blob/develop/examples/python/basic/CytoscapeREST_Basic2.ipynb)
 
 ## Documentation
 __All documents, including tutorials and full API list, are available from our [Wiki](https://github.com/idekerlab/cyREST/wiki)__.
