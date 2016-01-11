@@ -248,7 +248,7 @@ public class VisualStyleMapper {
 	}
 
 
-	public void updateDependencies(final VisualStyle style, final JsonNode rootNode) {
+	public Response updateDependencies(final VisualStyle style, final JsonNode rootNode) {
 		final Set<VisualPropertyDependency<?>> deps = style.getAllVisualPropertyDependencies();
 		
 		final Map<String, VisualPropertyDependency<?>> names = new HashMap<>();
@@ -271,5 +271,6 @@ public class VisualStyleMapper {
 			boolean value = enabled.asBoolean();
 			dep.setDependency(value);
 		}
+		return Response.ok().build();
 	}
 }
