@@ -3,6 +3,7 @@ package org.cytoscape.rest.internal;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.cytoscape.io.read.InputStreamTaskFactory;
 import org.cytoscape.task.NetworkCollectionTaskFactory;
 import org.cytoscape.task.NetworkTaskFactory;
 import org.cytoscape.work.ServiceProperties;
@@ -21,11 +22,23 @@ public class TaskFactoryManagerImpl implements TaskFactoryManager {
 		Object tfID = props.get(ServiceProperties.ID);
 		if (tfID != null) {
 			tfMap.put(tfID.toString(), tf);
-			// System.out.println("## got TF: " + tfID);
 		} else {
 			// generate ID from class Name
 			String tfName = tf.toString();
-			// System.out.println("tfName = " + tfName);
+			tfMap.put(tfName, tf);
+		}
+	}
+	
+	public void addInputStreamTaskFactory(final InputStreamTaskFactory tf, Map props) {
+		if (tf == null)
+			return;
+
+		Object tfID = props.get(ServiceProperties.ID);
+		if (tfID != null) {
+			tfMap.put(tfID.toString(), tf);
+		} else {
+			// generate ID from class Name
+			String tfName = tf.toString();
 			tfMap.put(tfName, tf);
 		}
 	}
@@ -37,11 +50,9 @@ public class TaskFactoryManagerImpl implements TaskFactoryManager {
 		Object tfID = props.get(ServiceProperties.ID);
 		if (tfID != null) {
 			tfMap.put(tfID.toString(), tf);
-			// System.out.println("## got TF: " + tfID);
 		} else {
 			// generate ID from class Name
 			String tfName = tf.toString();
-			// System.out.println("tfName = " + tfName);
 			tfMap.put(tfName, tf);
 		}
 	}
@@ -53,17 +64,17 @@ public class TaskFactoryManagerImpl implements TaskFactoryManager {
 		Object tfID = props.get(ServiceProperties.ID);
 		if (tfID != null) {
 			tfMap.put(tfID.toString(), tf);
-			// System.out.println("## got NC TF: " + tfID);
 		} else {
 			// generate ID from class Name
 			String tfName = tf.getClass().getSimpleName();
-			// System.out.println("NC = " + tfName);
 			tfMap.put(tfName, tf);
 		}
 	}
 
 	public void removeTaskFactory(TaskFactory command, Map props) {
 	}
+	
+	public void removeInputStreamTaskFactory(final InputStreamTaskFactory tf, Map props) {}
 
 	public void removeNetworkTaskFactory(NetworkTaskFactory command, Map props) {
 	}
@@ -94,5 +105,13 @@ public class TaskFactoryManagerImpl implements TaskFactoryManager {
 		else
 			return null;
 	}
-
+	
+	public InputStreamTaskFactory getInputStreamTaskFactory(final String id) {
+		final Object tf = tfMap.get(id);
+		
+		if (tf instanceof InputStreamTaskFactory)
+			return (InputStreamTaskFactory) tf;
+		else
+			return null;
+	}
 }

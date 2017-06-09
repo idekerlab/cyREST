@@ -21,13 +21,13 @@ import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
 import org.cytoscape.model.CyNetwork;
 import org.cytoscape.rest.internal.EdgeBundler;
 import org.cytoscape.rest.internal.datamapper.MapperUtil;
+import org.cytoscape.rest.internal.model.Message;
 import org.cytoscape.task.NetworkTaskFactory;
 import org.cytoscape.view.layout.CyLayoutAlgorithm;
 import org.cytoscape.view.layout.CyLayoutAlgorithmManager;
@@ -39,6 +39,11 @@ import org.cytoscape.work.Tunable;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.inject.Inject;
+
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
 
 /**
  * 
@@ -46,46 +51,35 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * Runs Cytoscape tasks, such as layouts or apply Style.
  * 
  */
+@Api()
 @Singleton
 @Path("/v1/apply")
 public class AlgorithmicResource extends AbstractResource {
 
-	@Context
+	@Inject
 	@NotNull
 	private TaskMonitor headlessTaskMonitor;
 
-	@Context
+	@Inject
 	@NotNull
 	private CyLayoutAlgorithmManager layoutManager;
 
-	@Context
+	@Inject
 	@NotNull
 	private NetworkTaskFactory fitContent;
 
-	@Context
+	@Inject
 	@NotNull
 	private EdgeBundler edgeBundler;
 
-	/**
-	 * 
-	 * @summary Apply layout to a network
-	 * 
-	 * @param algorithmName
-	 *            Name of layout algorithm ("circular", "force-directed", etc.)
-	 * @param networkId
-	 *            Target network SUID
-	 * @param column (URL Query Parameter) 
-	 * 				Column name to be used by the layout algorithm
-	 * 
-	 * @return Success message
-	 */
 	@GET
 	@Path("/layouts/{algorithmName}/{networkId}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response applyLayout(
-			@PathParam("algorithmName") String algorithmName,
-			@PathParam("networkId") Long networkId,
-			@QueryParam("column") String column) {
+	@ApiOperation(value="Apply layout to a network", tags={CyRESTSwagger.CyRESTSwaggerConfig.LAYOUTS_TAG})
+	public Message applyLayout(
+			@ApiParam("Name of layout algorithm (\"circular\", \"force-directed\", etc.)") @PathParam("algorithmName") String algorithmName,
+			@ApiParam("Network SUID") @PathParam("networkId") Long networkId,
+			@ApiParam("Column name to be used by the layout algorithm") @QueryParam("column") String column) {
 		final CyNetwork network = getCyNetwork(networkId);
 		final Collection<CyNetworkView> views = 
 				this.networkViewManager.getNetworkViews(network);
@@ -115,36 +109,24 @@ public class AlgorithmicResource extends AbstractResource {
 			throw getError("Could not apply layout.", e,
 					Response.Status.INTERNAL_SERVER_ERROR);
 		}
-		
-		final Map<String, String> successMessage = new HashMap<String, String>();
-		successMessage.put("message", "Layout finished.");
-		return Response.status(Response.Status.OK)
-				.entity(successMessage)
-				.type(MediaType.APPLICATION_JSON).build();
+	
+		return new Message("Layout finished.");		
 	}
 	
-	
-	/**
-	 * The return value is an map of all layout details, 
-	 * and each of parameter entry includes:
-	 * 
-	 * <ul>
-	 * 		<li>name: Unique name (ID) of the parameter</li>
-	 * 		<li>description: Description for the parameter</li>
-	 * 		<li>type: Java data type of the parameter</li>
-	 * 		<li>value: current value for the parameter field</li>
-	 * </ul>
-	 * 
-	 * @summary Get layout parameters for the algorithm
-	 * 
-	 * @param algorithmName Name of the layout algorithm
-	 * 
-	 * @return Editable layout parameters
-	 */
 	@GET
 	@Path("/layouts/{algorithmName}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response getLayout(@PathParam("algorithmName") String algorithmName) {
+	@ApiOperation(value="Get layout parameters for the algorithm", tags={CyRESTSwagger.CyRESTSwaggerConfig.LAYOUTS_TAG},
+	 notes = "The return value is an map of all layout details, and each parameter entry includes:\n\n"
+			 + "* name: Unique name (ID) of the parameter\n"
+			 + "* description: Description for the parameter\n"
+			 + "* type: Java data type of the parameter\n"
+			 + "* value: current value for the parameter field\n" 
+			 + "\n"
+			 + "Returns editable layout parameters\n"
+			)
+	public Response getLayout(
+			@ApiParam(value="Name of the layout algorithm") @PathParam("algorithmName") String algorithmName) {
 		final CyLayoutAlgorithm layout = this.layoutManager.getLayout(algorithmName);
 		if (layout == null) {
 			throw new NotFoundException("No such layout algorithm: " + algorithmName);
@@ -162,18 +144,13 @@ public class AlgorithmicResource extends AbstractResource {
 				.type(MediaType.APPLICATION_JSON).build();
 	}
 	
-
-	/**
-	 * @summary Returns layout parameter list
-	 * 
-	 * @param algorithmName Name of layout algorithm
-	 * 
-	 * @return All editable parameters for this algorithm.
-	 */
 	@GET
 	@Path("/layouts/{algorithmName}/parameters")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response getLayoutParameters(@PathParam("algorithmName") String algorithmName) {
+	@ApiOperation(value="Get layout parameter list", tags={CyRESTSwagger.CyRESTSwaggerConfig.LAYOUTS_TAG},
+			notes="Returns all editable parameters for this algorithm.")
+	public Response getLayoutParameters(
+			@ApiParam(value="Name of layout algorithm") @PathParam("algorithmName") String algorithmName) {
 		final CyLayoutAlgorithm layout = this.layoutManager.getLayout(algorithmName);
 		if (layout == null) {
 			throw new NotFoundException("No such layout algorithm: " + algorithmName);
@@ -192,18 +169,15 @@ public class AlgorithmicResource extends AbstractResource {
 				.type(MediaType.APPLICATION_JSON).build();
 	}
 	
-	/**
-	 * @summary Column data types compatible with this algorithm
-	 * 
-	 * @param algorithmName Name of layout algorithm
-	 * 
-	 * @return List of all compatible column data types
-	 */
+	
 	@GET
 	@Path("/layouts/{algorithmName}/columntypes")
 	@Produces(MediaType.APPLICATION_JSON)
+	@ApiOperation(value="Column data types compatible with this algorithm", 
+		tags={CyRESTSwagger.CyRESTSwaggerConfig.LAYOUTS_TAG},
+		notes="Returns a list ist of all compatible column data types")
 	public Response getCompatibleColumnDataTypes(
-			@PathParam("algorithmName") String algorithmName) {
+			@ApiParam(value="Name of layout algorithm") @PathParam("algorithmName") String algorithmName) {
 
 		final CyLayoutAlgorithm layout = this.layoutManager.getLayout(algorithmName);
 		if (layout == null) {
@@ -235,34 +209,27 @@ public class AlgorithmicResource extends AbstractResource {
 	}
 	
 	
-	/**
-	 * The body of your request should contain an array of new parameters.
-	 * The data should look like the following:
-	 * <br/>
-	 * 
-	 * [
-	 * 		{
-	 * 			"name": nodeHorizontalSpacing,
-	 * 			"value": 40.0
-	 * 		}, ...
-	 * ]
-	 * 
-	 * where:
-	 * <ul>
-	 * 		<li>name: Unique name (ID) of the parameter</li>
-	 * 		<li>value: New value for the parameter field</li>
-	 * </ul>
-	 * 
-	 * @summary Update layout parameters for the algorithm
-	 * 
-	 * @param algorithmName Name of the layout algorithm
-	 * 
-	 * @return Response code 200 if success
-	 */
 	@PUT
 	@Path("/layouts/{algorithmName}/parameters")
 	@Consumes(MediaType.APPLICATION_JSON)
-	public Response updateLayoutParameters(@PathParam("algorithmName") String algorithmName, final InputStream is) {
+	@ApiOperation(value="Update layout parameters for the algorithm", tags={CyRESTSwagger.CyRESTSwaggerConfig.LAYOUTS_TAG},
+	notes="The body of your request should contain an array of new parameters. The data should look like the following:\n"
+	+ "\n"
+	+ "```\n"
+	+ "[\n"
+	+ " {\n"
+	+ "  \"name\": \"nodeHorizontalSpacing\",\n"
+	+ "  \"value\": 40.0\n"
+	+ " }, ...\n"
+	+ "]\n"
+	+ "```\n"
+	+ "where: \n"
+	+ "* name: Unique name (ID) of the parameter\n"
+	+ "* value: New value for the parameter field\n")
+	public Response updateLayoutParameters(
+			@ApiParam(value="Name of the layout algorithm") @PathParam("algorithmName") String algorithmName, 
+			final InputStream is
+			) {
 		final ObjectMapper objMapper = new ObjectMapper();
 		final CyLayoutAlgorithm layout = this.layoutManager.getLayout(algorithmName);
 		final Object context = layout.getDefaultLayoutContext();
@@ -341,22 +308,14 @@ public class AlgorithmicResource extends AbstractResource {
 		return entryMap;
 	}
 
-	/**
-	 * 
-	 * @summary Apply Visual Style to a network
-	 * 
-	 * @param styleName
-	 *            Visual Style name (title)
-	 * @param networkId
-	 *            Target network SUID
-	 * 
-	 * @return Success message.
-	 */
 	@GET
 	@Path("/styles/{styleName}/{networkId}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response applyStyle(@PathParam("styleName") String styleName,
-			@PathParam("networkId") Long networkId) {
+	@ApiOperation(value="Apply Visual Style to a network", tags={CyRESTSwagger.CyRESTSwaggerConfig.VISUAL_STYLES_TAG})
+	public Message applyStyle(
+			@ApiParam(value="Style Name") @PathParam("styleName") String styleName,
+			@ApiParam(value="Network SUID") @PathParam("networkId") Long networkId
+			) {
 
 		final CyNetwork network = getCyNetwork(networkId);
 		final Set<VisualStyle> styles = vmm.getAllVisualStyles();
@@ -387,25 +346,18 @@ public class AlgorithmicResource extends AbstractResource {
 		vmm.setCurrentVisualStyle(targetStyle);
 		targetStyle.apply(view);
 
-		return Response.status(Response.Status.OK)
-				.type(MediaType.APPLICATION_JSON)
-				.entity("{\"message\":\"Visual Style applied.\"}").build();
+		return new Message("Visual Style applied.");
 	}
 
-	/**
-	 * 
-	 * Fit an existing network view to current window.
-	 * 
-	 * @summary Fit network to the window
-	 * 
-	 * @param networkId
-	 *            Network SUID
-	 * @return Success message
-	 */
 	@GET
 	@Path("/fit/{networkId}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response fitContent(@PathParam("networkId") Long networkId) {
+	@ApiOperation(
+		value="Fit network to the window", 
+		tags={CyRESTSwagger.CyRESTSwaggerConfig.VISUAL_PROPERTIES_TAG},
+		notes="Fit an existing network view to current window.")
+	public Message fitContent(
+			@ApiParam(value="Network SUID", required=true) @PathParam("networkId") Long networkId) {
 		final CyNetwork network = getCyNetwork(networkId);
 
 		Collection<CyNetworkView> views = this.networkViewManager
@@ -422,27 +374,19 @@ public class AlgorithmicResource extends AbstractResource {
 			throw getError("Could not fit content.", e,
 					Response.Status.INTERNAL_SERVER_ERROR);
 		}
-
-		return Response.status(Response.Status.OK)
-				.type(MediaType.APPLICATION_JSON)
-				.entity("{\"message\":\"Fit content success.\"}").build();
+		return new Message("Fit content success.");
 	}
 
-	/**
-	 * Apply edge bundling with default parameters. Currently optional
-	 * parameters are not supported.
-	 * 
-	 * @summary Apply Edge Bundling to a network
-	 * 
-	 * @param networkId
-	 *            Target network SUID
-	 * @return Success message
-	 * 
-	 */
 	@GET
 	@Path("/edgebundling/{networkId}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response bundleEdge(@PathParam("networkId") Long networkId) {
+	@ApiOperation(
+			value="Apply Edge Bundling to a network", 
+			tags={CyRESTSwagger.CyRESTSwaggerConfig.LAYOUTS_TAG},
+			notes="Apply edge bundling with default parameters. At present, optional parameters are not supported."
+			)
+	public Message bundleEdge(
+			@ApiParam(value="Network SUID") @PathParam("networkId") Long networkId) {
 		final CyNetwork network = getCyNetwork(networkId);
 
 		Collection<CyNetworkView> views = this.networkViewManager
@@ -461,25 +405,19 @@ public class AlgorithmicResource extends AbstractResource {
 					Response.Status.INTERNAL_SERVER_ERROR);
 		}
 
-		return Response.status(Response.Status.OK)
-				.type(MediaType.APPLICATION_JSON)
-				.entity("{\"message\":\"Edge bundling success.\"}").build();
+		return new Message("Edge bundling success.");
 	}
 
-	/**
-	 * List of all available layout algorithm names.
-	 * 
-	 * <h3>Important Note</h3>
-	 * This <strong>does not include yFiles layout algorithms</strong> 
-	 * due to license issues.
-	 *
-	 * @summary Get list of available layout algorithm names
-	 *
-	 * @return List of layout algorithm names.
-	 */
 	@GET
 	@Path("/layouts")
 	@Produces(MediaType.APPLICATION_JSON)
+	@ApiOperation(
+			nickname="layoutList",
+			value="Get list of available layout algorithm names", 
+			tags={CyRESTSwagger.CyRESTSwaggerConfig.LAYOUTS_TAG},
+			notes="<h3>Important Note</h3>" 
+			+" This <strong>does not include yFiles layout algorithms</strong>, due to license issues."
+			)
 	public Collection<String> getLayoutNames() {
 		return layoutManager.getAllLayouts().stream()
 			.map(layout->layout.getName())
@@ -487,17 +425,15 @@ public class AlgorithmicResource extends AbstractResource {
 	}
 
 
-	/**
-	 * Get list of all Visual Style names. 
-	 * Style names may not be unique.
-	 * 
-	 * @summary Get list of all Visual Style names
-	 * 
-	 * @return List of Visual Style names.
-	 */
+	
 	@GET
 	@Path("/styles")
 	@Produces(MediaType.APPLICATION_JSON)
+	@ApiOperation(
+			value="Get list of all Visual Style names", 
+			tags={CyRESTSwagger.CyRESTSwaggerConfig.VISUAL_STYLES_TAG},
+			notes="Style names may not be unique."
+			)
 	public Collection<String> getStyleNames() {
 		return vmm.getAllVisualStyles().stream()
 				.map(style->style.getTitle())

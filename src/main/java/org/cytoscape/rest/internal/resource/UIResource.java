@@ -13,12 +13,10 @@ import javax.validation.constraints.NotNull;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.InternalServerErrorException;
-import javax.ws.rs.NotFoundException;
 import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
-import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
@@ -28,45 +26,41 @@ import org.cytoscape.application.swing.CytoPanel;
 import org.cytoscape.application.swing.CytoPanelName;
 import org.cytoscape.application.swing.CytoPanelState;
 import org.cytoscape.rest.internal.CyActivator.LevelOfDetails;
+import org.cytoscape.rest.internal.model.Message;
 import org.cytoscape.work.TaskIterator;
 import org.cytoscape.work.TaskMonitor;
 
-import com.fasterxml.jackson.core.JsonParseException;
-import com.fasterxml.jackson.core.sym.Name;
-import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.inject.Inject;
 
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
 
+@Api(tags = {CyRESTSwagger.CyRESTSwaggerConfig.USER_INTERFACE_TAG})
 @Singleton
 @Path("/v1/ui")
 public class UIResource extends AbstractResource {
 
-	@Context
+	@Inject
 	@NotNull
 	protected CySwingApplication desktop;
 	
-	@Context
+	@Inject
 	@NotNull
 	protected LevelOfDetails detailsTF;
 	
-	@Context
+	@Inject
 	@NotNull
 	private TaskMonitor headlessTaskMonitor;
 
-
-	/**
-	 * 
-	 * @summary Get status of Desktop
-	 * 
-	 * @return An object with isDesktopAvailable field.  
-	 * 		This value is true if Cytoscape Desktop is available.
-	 * 		And it is false if Cytoscape is running in headless mode (not available yet). 
-	 * 
-	 */
 	@GET
 	@Path("/")
 	@Produces(MediaType.APPLICATION_JSON + ";charset=utf-8")
+	@ApiOperation(value="Get status of Desktop", notes="An object with isDesktopAvailable field.\n"  
+	+ "This value is true if Cytoscape Desktop is available."
+	+ "And it is false if Cytoscape is running in headless mode (not available yet). ")
 	public Map<String, Boolean> getDesktop() {
 		final Map<String, Boolean> status = new HashMap<>();
 		boolean desktopAvailable = false;
@@ -77,19 +71,12 @@ public class UIResource extends AbstractResource {
 		return status;
 	}
 
-
-	/**
-	 * 
-	 * Switch between full graphics details <---> fast rendering mode.
-	 * 
-	 * @summary Toggle level of graphics details (LoD).
-	 * 
-	 * @return Success message.
-	 */
 	@PUT
 	@Path("/lod")
 	@Produces(MediaType.APPLICATION_JSON + ";charset=utf-8")
-	public Response updateLodState() {
+	@ApiOperation(value="Toggle level of graphics details (LoD)", 
+		notes="Switch between full graphics details <---> fast rendering mode.\n\nReturns a success message.")
+	public Message updateLodState() {
 		final TaskIterator lod = detailsTF.getLodTF().createTaskIterator(null);
 		
 		try {
@@ -99,42 +86,25 @@ public class UIResource extends AbstractResource {
 					Response.Status.INTERNAL_SERVER_ERROR);
 		}
 
-		return Response.status(Response.Status.OK)
-				.type(MediaType.APPLICATION_JSON)
-				.entity("{\"message\":\"Toggled Graphics level of details.\"}").build();
+		return new Message("Toggled Graphics level of details.");
 	}
 
-	/**
-	 * The return value will includes status of all CytoPanels.
-	 * Each entry includes:
-	 * 
-	 * <ul>
-	 * 		<li>
-	 * 			name: Official name of the CytoPanel:
-	 * 			<ul>
-	 * 				<li>SOUTH</li>
-	 * 				<li>EAST</li>
-	 * 				<li>WEST</li>
-	 * 				<li>SOUTH_WEST</li>
-	 * 			</ul>
-	 * 		</li>
-	 * 		<li>
-	 * 			state: State of the CytoPanel:
-	 * 			<ul>
-	 * 				<li>FLOAT</li>
-	 * 				<li>DOCK</li>
-	 * 				<li>HIDE</li>
-	 * 			</ul>
-	 * 		</li>
-	 * </ul>
-	 * 
-	 * @summary Get status of all CytoPanels 
-	 * 
-	 * @return Panel status as an array
-	 */
 	@GET
 	@Path("/panels")
 	@Produces(MediaType.APPLICATION_JSON + ";charset=utf-8")
+	@ApiOperation(value="Get status of all CytoPanels", 
+		notes="Returns panel status as an array. The return value will include the status of all CytoPanels.\n\n"
+	 + "Each entry includes:\n"
+	+ "* name: Official name of the CytoPanel:\n"
+	+ "    * SOUTH\n"
+	+ "    * EAST\n"
+	+ "    * WEST\n"
+	+ "    * SOUTH_WEST\n"
+	+ "* state: State of the CytoPanel:\n"
+	+ "    * FLOAT\n"
+	+ "    * DOCK\n"
+	+ "    * HIDE\n"
+	)
 	public List<Map<String, String>> getAllPanelStatus() {
 		try {
 		return Arrays.asList(CytoPanelName.values()).stream()
@@ -154,21 +124,13 @@ public class UIResource extends AbstractResource {
 		return values;
 	}
 	
-	
-	/**
-	 * 
-	 * @summary Get status of a CytoPanel
-	 * 
-	 * @param panelName official name of the CytroPanel
-	 * 
-	 * @return Status of the CytoPanel (name-state pair)
-	 */
 	@GET
 	@Path("/panels/{panelName}")
 	@Produces(MediaType.APPLICATION_JSON + ";charset=utf-8")
-	public Response getPanelStatus(@PathParam("panelName") String panelName) {
+	@ApiOperation(value="Get status of a CytoPanel", notes="Returns the status of the CytoPanel (name-state pair)")
+	public Response getPanelStatus(
+			@ApiParam(value="Official name of the CytroPanel") @PathParam("panelName") String panelName) {
 		final CytoPanelName panel = CytoPanelName.valueOf(panelName);
-		System.out.println(panel);
 		if(panel == null) {
 			return Response.status(Response.Status.NOT_FOUND).build();
 		}
@@ -176,19 +138,10 @@ public class UIResource extends AbstractResource {
 		return Response.ok(getMap(panelObject)).build();
 	}
 
-
-	/**
-	 * 
-	 * You can update multiple panel states at once.
-	 * Body of your request should have same format as the return value of GET method.
-	 * 
-	 * @summary Update CytoPanel states
-	 * 
-	 * @return Response 200 if success
-	 */
 	@PUT
 	@Path("/panels")
 	@Consumes(MediaType.APPLICATION_JSON)
+	@ApiOperation(value="Update CytoPanel states", notes="You can update multiple panel states at once. The body of your request should have same format as the return value of GET method.")
 	public Response updatePanelStatus(final InputStream is) {
 		
 		final ObjectMapper objMapper = new ObjectMapper();

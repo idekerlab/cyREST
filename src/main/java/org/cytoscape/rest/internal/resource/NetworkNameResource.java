@@ -16,9 +16,11 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
 import org.cytoscape.model.CyNetwork;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
 
-import com.qmino.miredot.annotations.ReturnType;
-
+@Api(tags = {CyRESTSwagger.CyRESTSwaggerConfig.NETWORKS_TAG})
 @Singleton
 @Path("/v1/networks.names")
 public class NetworkNameResource extends AbstractResource {
@@ -27,29 +29,14 @@ public class NetworkNameResource extends AbstractResource {
 		super();
 	}
 
-	/**
-	 * 
-	 * Returns full list of network data as a JSON array. JSON is in <a
-	 * href="http://cytoscape.github.io/cytoscape.js/">Cytoscape.js</a> format.
-	 * If no query parameter is given, returns all networks in current session.
-	 * 
-	 * @summary Get networks in Cytoscape.js JSON format
-	 * 
-	 * @param column
-	 *            Optional. Network table column name to be used for search.
-	 * @param query
-	 *            Optional. Search query.
-	 * 
-	 * @return Matched networks in Cytoscape.js JSON. If no query is given, all
-	 *         networks.
-	 * 
-	 */
 	@GET
 	@Path("/")
 	@Produces(MediaType.APPLICATION_JSON + "; charset=UTF-8")
-	@ReturnType("java.util.List<org.cytoscape.rest.internal.model.CyJsNetwork>")
-	public List<Map<String,?>> getNetworks(@QueryParam("column") String column,
-			@QueryParam("query") String query) {
+	@ApiOperation(value = "Returns a list of network names with corresponding SUIDs",
+		    response = List.class)
+	public List<Map<String,?>> getNetworksNames(
+			@ApiParam(value="Column Name for Matching") @QueryParam("column") String column,
+			@ApiParam(value="Value to Match") @QueryParam("query") String query) {
 		Set<CyNetwork> networks;
 
 		if (column == null && query == null) {

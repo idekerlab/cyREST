@@ -25,9 +25,7 @@ import org.cytoscape.view.vizmap.mappings.DiscreteMapping;
 import org.cytoscape.view.vizmap.mappings.PassthroughMapping;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.qmino.miredot.annotations.MireDotIgnore;
 
-@MireDotIgnore
 public class VisualStyleMapper {
 
 	private static final String TITLE = "title";
@@ -226,7 +224,7 @@ public class VisualStyleMapper {
 	 * @param rootNode
 	 * @param lexicon
 	 */
-	public Response updateView(final View<? extends CyIdentifiable> view, final JsonNode rootNode, final VisualLexicon lexicon) {
+	public Response updateView(final View<? extends CyIdentifiable> view, final JsonNode rootNode, final VisualLexicon lexicon, boolean bypass) {
 		for (final JsonNode vpNode : rootNode) {
 			String vpName = vpNode.get(MAPPING_VP).textValue();
 			final VisualProperty<?> vp = getVisualProperty(vpName, lexicon);
@@ -242,7 +240,11 @@ public class VisualStyleMapper {
 				parsedValue = vp.parseSerializableString(value.toString());
 			}
 			
-			view.setVisualProperty(vp, parsedValue);
+			if (bypass){
+				view.setLockedValue(vp, parsedValue);
+			} else {
+				view.setVisualProperty(vp, parsedValue);
+			}
 		}
 		return Response.ok().build();
 	}

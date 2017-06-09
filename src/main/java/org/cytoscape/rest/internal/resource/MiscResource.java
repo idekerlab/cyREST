@@ -14,6 +14,9 @@ import javax.ws.rs.core.MediaType;
 import org.cytoscape.rest.internal.model.CytoscapeVersion;
 import org.cytoscape.rest.internal.model.ServerStatus;
 
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+
 /**
  * Resource to provide general status of the Cytoscape REST server. 
  * 
@@ -21,48 +24,34 @@ import org.cytoscape.rest.internal.model.ServerStatus;
  * @servicetag Server status
  * 
  */
+@Api(tags = {CyRESTSwagger.CyRESTSwaggerConfig.REST_SERVICE_TAG,CyRESTSwagger.CyRESTSwaggerConfig.CYTOSCAPE_SYSTEM_TAG})
 @Singleton
 @Path("/v1")
 public class MiscResource extends AbstractResource {
 
-	/**
-	 * @summary Cytoscape RESTful API server status
-	 * 
-	 * @return Summary of server status
-	 * 
-	 * @statuscode 500 If REST API Module is not working.
-	 */
 	@GET
 	@Path("/")
 	@Produces(MediaType.APPLICATION_JSON + ";charset=utf-8")
+	@ApiOperation(value="Cytoscape RESTful API server status",
+			notes="500 If REST API Module is not working")
 	public ServerStatus getStatus() {
 		return new ServerStatus();
 	}
 
-
-	/**
-	 * Run System.gc().  In general, this is not necessary.
-	 * 
-	 * @summary Force to run garbage collection to free up memory
-	 */
 	@GET
 	@Path("/gc")
 	@Produces(MediaType.APPLICATION_JSON)
+	@ApiOperation(value="Run Java garbage collection",
+			notes="Call System.gc() to free up memory. In general, this is not necessary.")
 	public void runGarbageCollection() {
 		Runtime.getRuntime().gc();
 	}
 	
-	
-	/**
-	 * 
-	 * @summary Get Cytoscape and REST API version
-	 * 
-	 * @return Cytoscape version and REST API version
-	 * 
-	 */
 	@GET
 	@Path("/version")
 	@Produces(MediaType.APPLICATION_JSON)
+	@ApiOperation(value="Get Cytoscape and REST API version"
+	)
 	public CytoscapeVersion getCytoscapeVersion() {
 
 		if (props == null) {
@@ -78,10 +67,12 @@ public class MiscResource extends AbstractResource {
 		}
 	}
 	
-	
+	//TODO Why is this here? It doesn't change anything, and appears to be the same as GET.
 	@PUT
 	@Path("/ui/show-details")
 	@Produces(MediaType.APPLICATION_JSON)
+	@ApiOperation(value="Show Level of Graphics Details", hidden=true,
+	notes="### Unimplemented\n\nDo not rely on this function.")
 	public CytoscapeVersion updateShowGraphicsDetailsOption() {
 
 		if (props == null) {

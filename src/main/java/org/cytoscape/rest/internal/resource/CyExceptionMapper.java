@@ -13,6 +13,7 @@ public class CyExceptionMapper implements ExceptionMapper<InternalServerErrorExc
 
 	@Override
 	public Response toResponse(InternalServerErrorException ex) {
+		System.out.println("CyExceptionMapper accessed.");
 		return Response.status(500).entity(Exceptions.getStackTraceAsString(ex)).type(MediaType.APPLICATION_JSON)
 				.build();
 	}

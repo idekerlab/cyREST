@@ -1,9 +1,17 @@
 package org.cytoscape.rest.internal;
 
+import java.util.Dictionary;
+import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import javax.swing.JOptionPane;
 
 import org.cytoscape.application.CyApplicationManager;
+import org.cytoscape.application.swing.CyAction;
 import org.cytoscape.application.swing.CySwingApplication;
 import org.cytoscape.command.AvailableCommands;
 import org.cytoscape.command.CommandExecutorTaskFactory;
@@ -23,10 +31,13 @@ import org.cytoscape.model.CyTableManager;
 import org.cytoscape.model.subnetwork.CyRootNetworkManager;
 import org.cytoscape.property.CyProperty;
 import org.cytoscape.rest.internal.reader.EdgeListReaderFactory;
-import org.cytoscape.rest.internal.task.CyBinder;
-import org.cytoscape.rest.internal.task.GrizzlyServerManager;
+import org.cytoscape.rest.internal.resource.apps.clustermaker2.ClusterMaker2Resource;
+import org.cytoscape.rest.internal.task.CoreServiceModule;
+import org.cytoscape.rest.internal.task.ResourceManager;
 import org.cytoscape.rest.internal.task.HeadlessTaskMonitor;
+import org.cytoscape.rest.internal.task.OSGiJAXRSManager;
 import org.cytoscape.service.util.AbstractCyActivator;
+import org.cytoscape.service.util.CyServiceRegistrar;
 import org.cytoscape.session.CySessionManager;
 import org.cytoscape.task.NetworkCollectionTaskFactory;
 import org.cytoscape.task.NetworkTaskFactory;
@@ -47,14 +58,22 @@ import org.cytoscape.view.vizmap.VisualStyleFactory;
 import org.cytoscape.work.SynchronousTaskManager;
 import org.cytoscape.work.TaskFactory;
 import org.cytoscape.work.TaskMonitor;
+import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
+import org.osgi.framework.BundleException;
+import org.osgi.framework.InvalidSyntaxException;
+import org.osgi.service.cm.Configuration;
+import org.osgi.service.cm.ConfigurationAdmin;
+import org.osgi.util.tracker.ServiceTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.inject.Module;
+
 public class CyActivator extends AbstractCyActivator {
-
+	
 	private static final Logger logger = LoggerFactory.getLogger(CyActivator.class);
-
+	
 	public class WriterListener {
 
 		private VizmapWriterFactory jsFactory;
@@ -76,21 +95,94 @@ public class CyActivator extends AbstractCyActivator {
 		}
 	}
 
-	private GrizzlyServerManager grizzlyServerManager = null;
+	private String cyRESTPort = null;
+	private OSGiJAXRSManager osgiJAXRSManager = null;
+	private ResourceManager resourceManager = null;
 
 	public CyActivator() {
 		super();
 	}
 
-	public void start(BundleContext bc) {
+	public void start(BundleContext bc) throws InvalidSyntaxException {
+		serverState = ServerState.STARTING;
+		logger.info("Initializing cyREST API server...");
+		long start = System.currentTimeMillis();
 
+		osgiJAXRSManager = new OSGiJAXRSManager();
+
+		final ExecutorService service = Executors.newSingleThreadExecutor();
+		service.submit(()-> {
+			try {
+				
+				if (suggestRestart(bc)) {
+					final CySwingApplication swingApplication = getService(bc, CySwingApplication.class);
+					if (swingApplication != null && swingApplication.getJFrame() != null) {
+					JOptionPane.showMessageDialog(swingApplication.getJFrame(), "CyREST requires a restart of Cytoscape "
+							+ "for changes to take effect.", "Restart required", JOptionPane.WARNING_MESSAGE);
+					}
+					serverState = ServerState.SUGGEST_RESTART;
+					logger.warn("Detected new installation. Restarting Cytoscape is recommended.");
+					
+				} else {
+					this.initDependencies(bc);
+					osgiJAXRSManager.installOSGiJAXRSBundles(bc, this.cyRESTPort);
+					resourceManager.registerResourceServices();
+					serverState = ServerState.STARTED;
+					logger.info("cyREST API Server initialized: " + (System.currentTimeMillis() - start) + " msec.");
+				}
+			} 
+			catch (Exception e) {
+				e.printStackTrace();
+				logger.error("Failed to initialize cyREST server.", e);
+				serverState = ServerState.FAILED_INITIALIZATION;
+			}
+		});
+	}
+
+	private ServerState serverState = ServerState.STOPPED;
+	
+	public ServerState getServerState() {
+		return serverState;
+	}
+	
+	public enum ServerState{
+		STARTING,
+		STARTED,
+		SUGGEST_RESTART,
+		FAILED_INITIALIZATION,
+		FAILED_STOP,
+		STOPPED
+	}
+	
+	private boolean suggestRestart(BundleContext bc) {
+		Bundle defaultBundle = bc.getBundle();	
+		final CyProperty<Properties> cyProperties = getService(bc, CyProperty.class,
+				"(cyPropertyName=cytoscape3.props)");
+		
+		Object cyRESTVersion = cyProperties.getProperties().get("cyrest.version");
+		if (!defaultBundle.getVersion().toString().equals(cyRESTVersion)) {
+			logger.info("CyREST [" + defaultBundle.getVersion().toString() + "] discovered previous CyREST Version: " + cyRESTVersion);
+			cyProperties.getProperties().put("cyrest.version", defaultBundle.getVersion().toString());
+			return true;
+		} else {
+			return false;
+		}
+	}
+	
+	private final void initDependencies(final BundleContext bc) throws Exception {
+		
+		// OSGi Service listeners
 		final MappingFactoryManager mappingFactoryManager = new MappingFactoryManager();
 		registerServiceListener(bc, mappingFactoryManager, "addFactory", "removeFactory",
 				VisualMappingFunctionFactory.class);
-		
+
 		final GraphicsWriterManager graphicsWriterManager = new GraphicsWriterManager();
 		registerServiceListener(bc, graphicsWriterManager, "addFactory", "removeFactory",
 				PresentationWriterFactory.class);
+
+		final CyNetworkViewWriterFactoryManager viewWriterManager = new CyNetworkViewWriterFactoryManager();
+		registerServiceListener(bc, viewWriterManager, "addFactory", "removeFactory",
+				CyNetworkViewWriterFactory.class);
 
 		@SuppressWarnings("unchecked")
 		final CyProperty<Properties> cyPropertyServiceRef = getService(bc, CyProperty.class,
@@ -121,36 +213,54 @@ public class CyActivator extends AbstractCyActivator {
 		final AvailableCommands available = getService(bc, AvailableCommands.class);
 		final CommandExecutorTaskFactory ceTaskFactory = getService(bc, CommandExecutorTaskFactory.class);
 		final SynchronousTaskManager<?> synchronousTaskManager = getService(bc, SynchronousTaskManager.class);
-		
+
 		// Get any command line arguments. The "-R" is ours
 		@SuppressWarnings("unchecked")
 		final CyProperty<Properties> commandLineProps = getService(bc, CyProperty.class, "(cyPropertyName=commandline.props)");
 
 		final Properties clProps = commandLineProps.getProperties();
-		
-		String restPortNumber = cyPropertyServiceRef.getProperties().getProperty(GrizzlyServerManager.PORT_NUMBER_PROP);
-		
-		if (clProps.getProperty(GrizzlyServerManager.PORT_NUMBER_PROP) != null)
-			restPortNumber = clProps.getProperty(GrizzlyServerManager.PORT_NUMBER_PROP);
-		
+
+		String restPortNumber = cyPropertyServiceRef.getProperties().getProperty(ResourceManager.PORT_NUMBER_PROP);
+
+		if (clProps.getProperty(ResourceManager.PORT_NUMBER_PROP) != null)
+			restPortNumber = clProps.getProperty(ResourceManager.PORT_NUMBER_PROP);
+
 		if(restPortNumber == null) {
-			restPortNumber = GrizzlyServerManager.DEF_PORT_NUMBER.toString();
+			restPortNumber = ResourceManager.DEF_PORT_NUMBER.toString();
 		}
+
+		this.cyRESTPort = restPortNumber;
 		
 		// Set Port number
-		cyPropertyServiceRef.getProperties().setProperty(GrizzlyServerManager.PORT_NUMBER_PROP, restPortNumber);
+		cyPropertyServiceRef.getProperties().setProperty(ResourceManager.PORT_NUMBER_PROP, restPortNumber);
 
+		final CyServiceRegistrar serviceRegistrar = getService(bc, CyServiceRegistrar.class);
+		
+		CyRESTCoreSwaggerAction swaggerCoreAction = new CyRESTCoreSwaggerAction(serviceRegistrar, this.cyRESTPort);
+		registerService(bc, swaggerCoreAction, CyAction.class, new Properties());
+		
+		CyRESTCommandSwaggerAction swaggerCommandAction = new CyRESTCommandSwaggerAction(serviceRegistrar, this.cyRESTPort);
+		registerService(bc, swaggerCommandAction, CyAction.class, new Properties());
+		
+		CyAutomationAction automationAction = new CyAutomationAction(serviceRegistrar);
+		registerService(bc, automationAction, CyAction.class, new Properties());
+		
 		// Task factories
 		final NewNetworkSelectedNodesAndEdgesTaskFactory networkSelectedNodesAndEdgesTaskFactory = getService(bc,
 				NewNetworkSelectedNodesAndEdgesTaskFactory.class);
-		final CyNetworkViewWriterFactory cytoscapeJsWriterFactory = getService(bc, CyNetworkViewWriterFactory.class,
-				"(id=cytoscapejsNetworkWriterFactory)");
-		final InputStreamTaskFactory cytoscapeJsReaderFactory = getService(bc, InputStreamTaskFactory.class,
-				"(id=cytoscapejsNetworkReaderFactory)");
-		
+
+		ServiceTracker cytoscapeJsWriterFactory = null;
+		ServiceTracker cytoscapeJsReaderFactory = null;
+		//CyNetworkViewWriterFactory cxWriterFactory = null;
+
+		cytoscapeJsWriterFactory = new ServiceTracker(bc, bc.createFilter("(&(objectClass=org.cytoscape.io.write.CyNetworkViewWriterFactory)(id=cytoscapejsNetworkWriterFactory))"), null);
+		cytoscapeJsWriterFactory.open();
+		cytoscapeJsReaderFactory = new ServiceTracker(bc, bc.createFilter("(&(objectClass=org.cytoscape.io.read.InputStreamTaskFactory)(id=cytoscapejsNetworkReaderFactory))"), null);
+		cytoscapeJsReaderFactory.open();
+
 		final LoadNetworkURLTaskFactory loadNetworkURLTaskFactory = getService(bc, LoadNetworkURLTaskFactory.class);
 		final SelectFirstNeighborsTaskFactory selectFirstNeighborsTaskFactory = getService(bc, SelectFirstNeighborsTaskFactory.class);
-		
+
 		// TODO: need ID for these services.
 		final NetworkTaskFactory fitContent = getService(bc, NetworkTaskFactory.class, "(title=Fit Content)");
 		final NetworkTaskFactory edgeBundler = getService(bc, NetworkTaskFactory.class, "(title=All Nodes and Edges)");
@@ -159,13 +269,15 @@ public class CyActivator extends AbstractCyActivator {
 
 		final RenderingEngineManager renderingEngineManager = getService(bc,RenderingEngineManager.class);
 
-		final WriterListener writerListsner = new WriterListener();
-		registerServiceListener(bc, writerListsner, "registerFactory", "unregisterFactory", VizmapWriterFactory.class);
+		final WriterListener writerListener = new WriterListener();
+		registerServiceListener(bc, writerListener, "registerFactory", "unregisterFactory", VizmapWriterFactory.class);
 
 		final TaskFactoryManager taskFactoryManagerManager = new TaskFactoryManagerImpl();
 
 		// Get all compatible tasks
 		registerServiceListener(bc, taskFactoryManagerManager, "addTaskFactory", "removeTaskFactory", TaskFactory.class);
+		registerServiceListener(bc, taskFactoryManagerManager, 
+				"addInputStreamTaskFactory", "removeInputStreamTaskFactory", InputStreamTaskFactory.class);
 		registerServiceListener(bc, taskFactoryManagerManager, "addNetworkTaskFactory", "removeNetworkTaskFactory",
 				NetworkTaskFactory.class);
 		registerServiceListener(bc, taskFactoryManagerManager, "addNetworkCollectionTaskFactory",
@@ -180,35 +292,68 @@ public class CyActivator extends AbstractCyActivator {
 		edgeListReaderFactoryProps.setProperty("ID", "edgeListReaderFactory");
 		registerService(bc, edgeListReaderFactory, InputStreamTaskFactory.class, edgeListReaderFactoryProps);
 
+		BundleResourceProvider bundleResourceProvider = new BundleResourceProvider(bc);
+		
+		final String logLocation;
+
+		// Extract Karaf's log file location
+		ConfigurationAdmin configurationAdmin = getService(bc, ConfigurationAdmin.class);
+		
+		if (configurationAdmin != null) {
+			Configuration config = configurationAdmin.getConfiguration("org.ops4j.pax.logging");
+
+			Dictionary<?,?> dictionary = config.getProperties();
+			Object logObject = dictionary.get("log4j.appender.file.File");
+			if (logObject != null && logObject instanceof String) {
+				logLocation = (String) logObject;
+			}
+			else {
+				logLocation = null;
+			}
+		}
+		else {
+			logLocation = null;
+		}
+
+		final Map<Class<?>, Module> shimResources = new HashMap<Class<?>, Module>();
+		shimResources.put(ClusterMaker2Resource.class, null);
+		
 		// Start REST Server
-		final CyBinder binder = new CyBinder(netMan, netViewMan, netFact, taskFactoryManagerManager,
+		final CoreServiceModule coreServiceModule = new CoreServiceModule(netMan, netViewMan, netFact, taskFactoryManagerManager,
 				applicationManager, visMan, cytoscapeJsWriterFactory, cytoscapeJsReaderFactory, layoutManager,
-				writerListsner, headlessTaskMonitor, tableManager, vsFactory, mappingFactoryManager, groupFactory,
+				writerListener, headlessTaskMonitor, tableManager, vsFactory, mappingFactoryManager, groupFactory,
 				groupManager, cyRootNetworkManager, loadNetworkURLTaskFactory, cyPropertyServiceRef,
 				networkSelectedNodesAndEdgesTaskFactory, edgeListReaderFactory, netViewFact, tableFactory, fitContent,
 				new EdgeBundlerImpl(edgeBundler), renderingEngineManager, sessionManager, 
 				saveSessionAsTaskFactory, openSessionTaskFactory, newSessionTaskFactory, desktop, 
 				new LevelOfDetails(showDetailsTaskFactory), selectFirstNeighborsTaskFactory, graphicsWriterManager, 
-				exportNetworkViewTaskFactory, available, ceTaskFactory, synchronousTaskManager);
-				this.grizzlyServerManager = new GrizzlyServerManager(binder, cyPropertyServiceRef);
-		try {
-			this.grizzlyServerManager.startServer();
-		} catch (Exception e) {
-			logger.error("Could not start server!", e);
-			e.printStackTrace();
-		}
+				exportNetworkViewTaskFactory, available, ceTaskFactory, synchronousTaskManager, viewWriterManager, bundleResourceProvider, restPortNumber, logLocation);
+
+		this.resourceManager = new ResourceManager(bc, CyRESTConstants.coreResourceClasses, coreServiceModule, shimResources);
 	}
+
 
 	@Override
 	public void shutDown() {
 		logger.info("Shutting down REST server...");
-		if (grizzlyServerManager != null) {
-			grizzlyServerManager.stopServer();
+
+		if (resourceManager != null) {
+			resourceManager.unregisterResourceServices();
 		}
+		if (osgiJAXRSManager != null)
+		{
+			try {
+				osgiJAXRSManager.uninstallOSGiJAXRSBundles();
+			} catch (BundleException e) {
+				this.serverState = ServerState.FAILED_STOP;
+				logger.error("Error shutting down REST server", e);
+				e.printStackTrace();
+			}
+		}
+		super.shutDown();
 	}
 
 	class EdgeBundlerImpl implements EdgeBundler {
-
 		private final NetworkTaskFactory bundler;
 
 		public EdgeBundlerImpl(final NetworkTaskFactory tf) {
@@ -221,7 +366,7 @@ public class CyActivator extends AbstractCyActivator {
 		}
 
 	}
-	
+
 	public class LevelOfDetails {
 
 		private final NetworkTaskFactory lod;

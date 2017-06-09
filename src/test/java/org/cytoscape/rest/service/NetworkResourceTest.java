@@ -1,8 +1,15 @@
 package org.cytoscape.rest.service;
 
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+
 import static org.junit.Assert.*;
 
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.net.URL;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -10,18 +17,15 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
-import javax.naming.spi.DirStateFactory.Result;
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.Application;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import javax.xml.crypto.NodeSetData;
-
 import org.cytoscape.model.CyEdge;
-import org.cytoscape.model.CyIdentifiable;
 import org.cytoscape.model.CyNetwork;
 import org.cytoscape.model.CyNode;
 import org.cytoscape.rest.internal.resource.NetworkResource;
+import org.cytoscape.work.TaskIterator;
 import org.glassfish.jersey.server.ResourceConfig;
 import org.junit.Test;
 
@@ -61,6 +65,31 @@ public class NetworkResourceTest extends BasicResourceTest {
 		assertEquals(2, root.size());
 	}
 
+	@Test
+	public void testGetNetworksQueryNullProducesError() throws Exception {
+		Response result = target("/v1/networks").queryParam("column", "dummy").request().get();
+		assertNotNull(result);
+		
+		assertEquals(500, result.getStatus());
+	}
+	
+	@Test
+	public void testGetNetworksColumnNullProducesError() throws Exception {
+		Response result = target("/v1/networks").queryParam("query", "dummy").request().get();
+		assertNotNull(result);
+		assertEquals(500, result.getStatus());
+	}
+	
+
+	@Test
+	public void testGetNetworksQuery() throws Exception {
+		Response result = target("/v1/networks").queryParam("column", "dummy").queryParam("query", "dummy").request().get();
+		assertNotNull(result);
+		System.out.println(result.readEntity(String.class));
+		//TODO Verify for actual queries
+		assertEquals(200, result.getStatus());
+	}
+	
 	@Test
 	public void testGetNodeCount() throws Exception {
 		final Long suid = network.getSUID();
@@ -297,6 +326,58 @@ public class NetworkResourceTest extends BasicResourceTest {
 	}
 
 	@Test
+	public void testPutSelectedNodes() throws Exception {
+		final Long suid = network.getSUID();
+		final List<CyNode> nodes = network.getNodeList();
+		final CyNode node1 =  nodes.get(0);
+		final CyNode node2 =  nodes.get(1);
+		final CyNode node3 =  nodes.get(2);
+		// Set selected.
+		
+		network.getRow(node1).set(CyNetwork.SELECTED, false);
+		network.getRow(node2).set(CyNetwork.SELECTED, false);
+		network.getRow(node3).set(CyNetwork.SELECTED, false);
+		
+		final Entity<String> entity = Entity.entity("[" + node1.getSUID() +"," + node2.getSUID() +"]", MediaType.APPLICATION_JSON_TYPE);
+				
+		Response response = target("/v1/networks/" + suid.toString() + "/nodes/selected")
+				.request()
+				.put(entity);
+		
+		assertEquals(200, response.getStatus());
+		
+		assertTrue(network.getRow(node1).get(CyNetwork.SELECTED, Boolean.class));
+		assertTrue(network.getRow(node2).get(CyNetwork.SELECTED, Boolean.class));
+		assertFalse(network.getRow(node3).get(CyNetwork.SELECTED, Boolean.class));
+	}
+	
+	@Test
+	public void testPutSelectedEdges() throws Exception {
+		final Long suid = network.getSUID();
+		final List<CyEdge> edges = network.getEdgeList();
+		final CyEdge edge1 =  edges.get(0);
+		final CyEdge edge2 =  edges.get(1);
+		final CyEdge edge3 =  edges.get(2);
+		// Set selected.
+		
+		network.getRow(edge1).set(CyNetwork.SELECTED, false);
+		network.getRow(edge2).set(CyNetwork.SELECTED, false);
+		network.getRow(edge3).set(CyNetwork.SELECTED, false);
+		
+		final Entity<String> entity = Entity.entity("[" + edge1.getSUID() +"," + edge2.getSUID() +"]", MediaType.APPLICATION_JSON_TYPE);
+				
+		Response response = target("/v1/networks/" + suid.toString() + "/edges/selected")
+				.request()
+				.put(entity);
+		
+		assertEquals(200, response.getStatus());
+		
+		assertTrue(network.getRow(edge1).get(CyNetwork.SELECTED, Boolean.class));
+		assertTrue(network.getRow(edge2).get(CyNetwork.SELECTED, Boolean.class));
+		assertFalse(network.getRow(edge3).get(CyNetwork.SELECTED, Boolean.class));
+	}
+	
+	@Test
 	public void testGetEdges() throws Exception {
 		final Long suid = network.getSUID();
 		String result = target("/v1/networks/" + suid.toString() + "/edges").request().get(
@@ -517,7 +598,72 @@ public class NetworkResourceTest extends BasicResourceTest {
 		stream.close();
 		return result;
 	}
+	
+	private final String createNetworkListJson(String sourceLocation) throws Exception {
+		final JsonFactory factory = new JsonFactory();
+		ByteArrayOutputStream stream = new ByteArrayOutputStream();
+		JsonGenerator generator = null;
+		
+		generator = factory.createGenerator(stream);
+		generator.writeStartArray();
+		
+		// Entry 1
+		generator.writeStartObject();
+		generator.writeStringField("source_location", sourceLocation);
+		generator.writeStringField("source_method", "GET");
+		generator.writeStringField("ndex_uuid", "12345");
+		generator.writeEndObject();
+		
+		
+		generator.writeEndArray();
+		generator.close();
+		final String result = stream.toString("UTF-8");
+		stream.close();
+		return result;
+	}
 
+	@Test
+	public void testCreateNetworkFromUrl() throws Exception {
+		String urlString = "https://raw.githubusercontent.com/cytoscape/cytoscape-impl/develop/io-impl/impl/src/test/resources/testData/sif/sample.sif";
+		final String newVal = createNetworkListJson(urlString);
+		System.out.println("New values: " + newVal);
+		final Entity<String> entity = Entity.entity(newVal, MediaType.APPLICATION_JSON_TYPE);
+		Response result = target("/v1/networks").queryParam("source", "url").queryParam("format", "edgelist").request().post(entity);
+		assertNotNull(result);
+		assertEquals(200, result.getStatus());
+		verify(loadNetworkURLTaskFactory).loadCyNetworks(eq(new URL(urlString)));
+		final String body = result.readEntity(String.class);
+		final JsonNode root = mapper.readTree(body);
+		assertEquals(urlString, root.get(0).get("source").asText());
+		System.out.println("BODY: " + body);
+		System.out.println("res: " + result.toString());
+	}
+	
+	@Test
+	public void testCreateNetworkFromUrlCx() throws Exception {
+		verify(tfManager, never()).getInputStreamTaskFactory(eq("cytoscapeCxNetworkReaderFactory"));
+		verify(inputStreamCXTaskFactory, never()).createTaskIterator(any(InputStream.class), eq("cx file"));
+		verify(inputStreamCXNetworkReader, never()).getNetworks();
+		
+		
+		String urlString = "http://www.ndexbio.org/v2/network/01c83ba5-0d90-11e6-b550-06603eb7f303?download=true";
+		final String newVal = createNetworkListJson(urlString);
+		System.out.println("New values: " + newVal);
+		final Entity<String> entity = Entity.entity(newVal, MediaType.APPLICATION_JSON_TYPE);
+		Response result = target("/v1/networks").queryParam("source", "url").queryParam("format", "cx").request().post(entity);
+		assertNotNull(result);
+		assertEquals(200, result.getStatus());
+		verify(tfManager).getInputStreamTaskFactory(eq("cytoscapeCxNetworkReaderFactory"));
+		verify(inputStreamCXTaskFactory).createTaskIterator(any(InputStream.class), eq("cx file"));
+		verify(inputStreamCXNetworkReader).getNetworks();
+		//verify(rootNetworkManager).getRootNetwork(arg0);
+		final String body = result.readEntity(String.class);
+		System.out.println("BODY: " + body);
+		final JsonNode root = mapper.readTree(body);
+		assertEquals(urlString, root.get(0).get("source").asText());
+		System.out.println("res: " + result.toString());
+	}
+	
 	@Test
 	public void testCreateNetwork() throws Exception {
 		

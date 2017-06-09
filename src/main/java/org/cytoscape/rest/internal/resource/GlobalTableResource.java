@@ -7,20 +7,25 @@ import javax.validation.constraints.NotNull;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
-import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 
 import org.cytoscape.model.CyTable;
 import org.cytoscape.model.CyTableFactory;
+import org.cytoscape.rest.internal.model.Count;
 import org.cytoscape.rest.internal.serializer.TableModule;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.inject.Inject;
+
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
 
 @Singleton
 @Path("/v1/tables")
+@Api(tags = {CyRESTSwagger.CyRESTSwaggerConfig.TABLES_TAG})
 public class GlobalTableResource extends AbstractResource {
 
-	@Context
+	@Inject
 	@NotNull
 	private CyTableFactory tableFactory;
 
@@ -32,17 +37,13 @@ public class GlobalTableResource extends AbstractResource {
 		this.tableObjectMapper.registerModule(new TableModule());
 	}
 
-	/**
-	 * 
-	 * @summary Get number of global tables
-	 * 
-	 * @return Number of global tables.
-	 */
 	@GET
 	@Path("/count")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String getTableCount() {
+	@ApiOperation(value="Get number of global tables", 
+			notes="Returns the number of global tables.")
+	public Count getTableCount() {
 		final Set<CyTable> globals = tableManager.getGlobalTables();
-		return getNumberObjectString(JsonTags.COUNT, globals.size());
+		return new Count(Integer.valueOf(globals.size()).longValue());
 	}
 }

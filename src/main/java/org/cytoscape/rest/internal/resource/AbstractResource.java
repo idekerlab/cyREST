@@ -4,19 +4,18 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Properties;
 import java.util.Set;
 
 import javax.validation.constraints.NotNull;
 import javax.ws.rs.InternalServerErrorException;
 import javax.ws.rs.NotFoundException;
 import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
 import org.cytoscape.application.CyApplicationManager;
-import org.cytoscape.io.read.InputStreamTaskFactory;
 import org.cytoscape.io.write.CyNetworkViewWriterFactory;
 import org.cytoscape.io.write.CyWriter;
 import org.cytoscape.model.CyIdentifiable;
@@ -31,9 +30,14 @@ import org.cytoscape.model.subnetwork.CyRootNetworkManager;
 import org.cytoscape.property.CyProperty;
 import org.cytoscape.rest.internal.TaskFactoryManager;
 import org.cytoscape.rest.internal.CyActivator.WriterListener;
+import org.cytoscape.rest.internal.CyNetworkViewWriterFactoryManager;
 import org.cytoscape.rest.internal.datamapper.MapperUtil;
 import org.cytoscape.rest.internal.reader.EdgeListReaderFactory;
+import org.cytoscape.rest.internal.serializer.ExceptionSerializer;
 import org.cytoscape.rest.internal.serializer.GraphObjectSerializer;
+import org.cytoscape.rest.internal.task.CyRESTPort;
+import org.cytoscape.rest.internal.task.CytoscapeJsReaderFactory;
+import org.cytoscape.rest.internal.task.CytoscapeJsWriterFactory;
 import org.cytoscape.rest.internal.task.HeadlessTaskMonitor;
 import org.cytoscape.task.create.NewNetworkSelectedNodesAndEdgesTaskFactory;
 import org.cytoscape.task.read.LoadNetworkURLTaskFactory;
@@ -42,9 +46,14 @@ import org.cytoscape.view.model.CyNetworkViewFactory;
 import org.cytoscape.view.model.CyNetworkViewManager;
 import org.cytoscape.view.model.VisualLexicon;
 import org.cytoscape.view.vizmap.VisualMappingManager;
+import org.osgi.util.tracker.ServiceTracker;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.google.inject.Inject;
 
 /**
  * Prepare services to be injected.
@@ -67,78 +76,100 @@ public abstract class AbstractResource {
 	 */
 	protected final WebApplicationException getError(final String errorMessage, final Exception ex, final Status status) {
 		// This is necessary to avoid threading issues.
-		final Exception cause = new Exception(ex.getMessage());
-		cause.setStackTrace(ex.getStackTrace());
-		final Exception wrapped = new IllegalStateException(errorMessage, cause);
-	
+//		final Exception cause = new Exception(ex.getMessage());
+//		cause.setStackTrace(ex.getStackTrace());
+		final Exception wrapped = new IllegalStateException(errorMessage, ex);
+		ObjectMapper mapper = new ObjectMapper();
+		 
+		SimpleModule module = new SimpleModule();
+		module.addSerializer(Exception.class, new ExceptionSerializer());
+		mapper.registerModule(module);
+		String serialized;
+		try {
+			serialized = mapper.writeValueAsString(wrapped);
+		} catch (JsonProcessingException e) {
+			serialized = "Exception processing Error.";
+			e.printStackTrace();
+		}
+		
 		if (status == Response.Status.INTERNAL_SERVER_ERROR) {
 			// Otherwise, 500.
 			return new InternalServerErrorException(Response.status(status).type(MediaType.APPLICATION_JSON)
-					.entity(wrapped).build());
+					.entity(serialized ).build());
 		} else {
 			// All other types
 			return new WebApplicationException(Response.status(status).type(MediaType.APPLICATION_JSON)
-					.entity(wrapped).build());
+					.entity(serialized ).build());
 		}
 	}
 
-	@Context
+	@Inject
 	@NotNull
 	protected CyApplicationManager applicationManager;
 
-	@Context
+	@Inject
 	protected CyNetworkManager networkManager;
 
-	@Context
+	@Inject
 	protected CyRootNetworkManager cyRootNetworkManager;
 
-	@Context
+	@Inject
 	protected CyTableManager tableManager;
 
-	@Context
+	@Inject
 	protected CyNetworkViewManager networkViewManager;
 
-	@Context
+	@Inject
 	protected CyNetworkFactory networkFactory;
 
-	@Context
+	@Inject
 	protected CyNetworkViewFactory networkViewFactory;
 
-	@Context
+	@Inject
 	protected TaskFactoryManager tfManager;
 
-	@Context
-	protected InputStreamTaskFactory cytoscapeJsReaderFactory;
+	@Inject
+	@CytoscapeJsReaderFactory
+	protected ServiceTracker cytoscapeJsReaderFactory;
 
-	@Context
+	@Inject
 	@NotNull
 	protected VisualMappingManager vmm;
 
-	@Context
-	protected CyNetworkViewWriterFactory cytoscapeJsWriterFactory;
+	@Inject
+	@CytoscapeJsWriterFactory
+	protected ServiceTracker cytoscapeJsWriterFactory;
+	
+	@Inject
+	protected CyNetworkViewWriterFactoryManager viewWriterFactoryManager;
 
-	@Context
+	@Inject
 	protected WriterListener vizmapWriterFactoryListener;
 
-	@Context
+	@Inject
 	protected LoadNetworkURLTaskFactory loadNetworkURLTaskFactory;
 
-	@Context
-	protected CyProperty<?> props;
+	@Inject
+	protected CyProperty<Properties> props;
 
-	@Context
+	@Inject
 	protected NewNetworkSelectedNodesAndEdgesTaskFactory newNetworkSelectedNodesAndEdgesTaskFactory;
 
-	@Context
+	@Inject
 	protected EdgeListReaderFactory edgeListReaderFactory;
 	
-
+	@Inject
+	@CyRESTPort
+	protected String cyRESTPort;
+	
 	protected final GraphObjectSerializer serializer;
 
 	public AbstractResource() {
 		this.serializer = new GraphObjectSerializer();
 	}
 
+	
+	
 	protected final CyNetwork getCyNetwork(final Long id) {
 		if (id == null) {
 			throw new NotFoundException("SUID is null.");
@@ -248,6 +279,11 @@ public abstract class AbstractResource {
 	
 	protected final String getNetworkString(final CyNetwork network) {
 		final ByteArrayOutputStream stream = new ByteArrayOutputStream();
+		CyNetworkViewWriterFactory cytoscapeJsWriterFactory = (CyNetworkViewWriterFactory) this.cytoscapeJsWriterFactory.getService();
+		if (cytoscapeJsWriterFactory == null)
+		{
+			throw getError("Cytoscape js writer factory is unavailable.", new IllegalStateException(), Response.Status.SERVICE_UNAVAILABLE);
+		}
 		CyWriter writer = cytoscapeJsWriterFactory.createWriter(stream, network);
 		String jsonString = null;
 		try {

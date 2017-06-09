@@ -23,9 +23,7 @@ import org.cytoscape.view.vizmap.mappings.PassthroughMapping;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.qmino.miredot.annotations.MireDotIgnore;
 
-@MireDotIgnore
 public class VisualStyleSerializer {
 
 	private final DiscreteMappingSerializer discSerializer = new DiscreteMappingSerializer();
@@ -57,7 +55,7 @@ public class VisualStyleSerializer {
 		return result;
 	}
 
-
+	/*
 	public final String serializeVisualProperties(final Set<VisualProperty<?>> vps) throws IOException {
 		final JsonFactory factory = new JsonFactory();
 		
@@ -85,6 +83,7 @@ public class VisualStyleSerializer {
 		stream.close();
 		return result;
 	}
+	*/
 
 
 	public final String serializeVisualProperty(final VisualProperty vp) throws IOException {
